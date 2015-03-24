@@ -3,6 +3,8 @@ Randy Olson's Shortest Route Program modified By Andrew Liesinger to:
     1: Detect waypoints file at runtime - if found use it, otherwise look up distances via google calls (and then save to waypoint file)
     2: Dynamically create and open an HTML file showing the route when a shorter route is found
     3: Make it easier to tinker with the Generation / Population parameters
+
+Modified by Peter Yoachim to Loop over the N largest US-Metro areas
 """
 from itertools import combinations
 import googlemaps
@@ -12,69 +14,115 @@ import os.path
 import random
 import webbrowser
 
-GOOGLE_MAPS_API_KEY = "Your Key Here"
+apiFile = '/Users/yoachim/.keys/googleMapsAPIKey.txt'
+f = open(apiFile, 'r')
+GOOGLE_MAPS_API_KEY = f.readlines()[0].strip()#"Your Key Here"
+f.close()
 waypoints_file = "my-waypoints-dist-dur.tsv"
 
 #This is the general filename - as shorter routes are discovered the Population fitness score will be inserted into the filename
 #so that interim results are saved for comparision.  The actual filenames using the default below will be:
-#Output_<Population Fitness Score>.html 
+#Output_<Population Fitness Score>.html
 output_file = 'Output.html'
 
 #parameters for the Genetic algoritim
 thisRunGenerations=5000
 thisRunPopulation_size=100
 
+# Top Metro Areas taken from http://en.wikipedia.org/wiki/List_of_metropolitan_areas_of_the_United_States
+all_waypoints = ["New York, New York",
+"Los Angeles, California",
+"Chicago, Illinois",
+"Washington, District of Columbia",
+"San Jose, California",
+"Boston, Massachusetts",
+"Philadelphia, Pennsylvania",
+"Dallas, Texas",
+"Miami, Florida",
+"Houston, Texas",
+"Atlanta, Georgia",
+"Detroit, Michigan",
+"Seattle, Washington",
+"Riverside, California",
+"Phoenix, Arizona",
+"Minneapolis, Minnesota",
+"Cleveland, Ohio",
+"Denver, Colorado",
+"San Diego, California",
+"Portland, Oregon",
+"Orlando, Florida",
+"St. Louis, Missouri",
+"Tampa, Florida",
+"Baltimore, Maryland",
+"Pittsburgh, Pennsylvania",
+"Sacramento, California",
+"Charlotte, North Carolina",
+"Kansas City, Missouri",
+"Salt Lake City, Utah",
+"Columbus, Ohio",
+"Indianapolis, Indiana",
+"Las Vegas, Nevada",
+"San Antonio, Texas",
+"Cincinnati, Ohio",
+"Milwaukee, Wisconsin",
+"Raleigh, North Carolina",
+"Nashville, Tennessee",
+"Austin, Texas",
+"Virginia Beach, Virginia",
+"Greensboro, North Carolina",
+"Providence, Rhode Island",
+"Jacksonville, Florida",
+"Hartford, Connecticut",
+"Louisville, Kentucky",
+"New Orleans, Louisiana",
+"Grand Rapids, Michigan",
+"Greenville, South Carolina",
+"Memphis, Tennessee",
+"Oklahoma City, Oklahoma",
+"Birmingham, Alabama",
+"Richmond, Virginia",
+"Harrisburg, Pennsylvania",
+"Buffalo, New York",
+"Rochester, New York",
+"Albany, New York",
+"Albuquerque, New Mexico",
+"Tulsa, Oklahoma",
+"Fresno, California",
+# Throwing errors
+#"Knoxville, Tennessee",
+#"Dayton, Ohio",
+#"El Paso, Texas",
+#"Tucson, Arizona",
+# Throwing errors?
+#"Cape Coral, Florida",
+# Can't drive here!
+#"Honolulu, Hawaii",
+"Chattanooga, Tennessee",
+"Bridgeport, Connecticut",
+"Worcester, Massachusetts",
+"Omaha, Nebraska",
+"North Port, Florida",
+"Columbia, South Carolina",
+"Little Rock, Arkansas",
+"McAllen, Texas",
+"New Haven, Connecticut",
+"Bakersfield, California",
+"Madison, Wisconsin",
+"Oxnard, California",
+"Allentown, Pennsylvania",
+"Baton Rouge, Louisiana",
+"Modesto, California",
+"Des Moines, Iowa",
+"Syracuse, New York",
+"South Bend, Indiana",
+"Boise, Idaho",
+"Huntington, West Virginia"]
 
-all_waypoints = ["USS Alabama, Battleship Parkway, Mobile, AL",
-                 "Grand Canyon National Park, Arizona",
-                 "Toltec Mounds, Scott, AR",
-                 "San Andreas Fault, San Benito County, CA",
-                 "Cable Car Museum, 94108, 1201 Mason St, San Francisco, CA 94108",
-                 "Pikes Peak, Colorado",
-                 "The Mark Twain House & Museum, Farmington Avenue, Hartford, CT",
-                 "New Castle Historic District, Delaware",
-                 "White House, Pennsylvania Avenue Northwest, Washington, DC",
-                 "Cape Canaveral, FL",
-                 "Okefenokee Swamp Park, Okefenokee Swamp Park Road, Waycross, GA",
-                 "Craters of the Moon National Monument & Preserve, Arco, ID",
-                 "Lincoln Home National Historic Site Visitor Center, 426 South 7th Street, Springfield, IL",
-                 "West Baden Springs Hotel, West Baden Avenue, West Baden Springs, IN",
-                 "Terrace Hill, Grand Avenue, Des Moines, IA",
-                 "C. W. Parker Carousel Museum, South Esplanade Street, Leavenworth, KS",
-                 "Mammoth Cave National Park, Mammoth Cave Pkwy, Mammoth Cave, KY",
-                 "French Quarter, New Orleans, LA",
-                 "Acadia National Park, Maine",
-                 "Maryland State House, 100 State Cir, Annapolis, MD 21401",
-                 "USS Constitution, Boston, MA",
-                 "Olympia Entertainment, Woodward Avenue, Detroit, MI",
-                 "Fort Snelling, Tower Avenue, Saint Paul, MN",
-                 "Vicksburg National Military Park, Clay Street, Vicksburg, MS",
-                 "Gateway Arch, Washington Avenue, St Louis, MO",
-                 "Glacier National Park, West Glacier, MT",
-                 "Ashfall Fossil Bed, Royal, NE",
-                 "Hoover Dam, NV",
-                 "Omni Mount Washington Resort, Mount Washington Hotel Road, Bretton Woods, NH",
-                 "Congress Hall, Congress Place, Cape May, NJ 08204",
-                 "Carlsbad Caverns National Park, Carlsbad, NM",
-                 "Statue of Liberty, Liberty Island, NYC, NY",
-                 "Wright Brothers National Memorial Visitor Center, Manteo, NC",
-                 "Fort Union Trading Post National Historic Site, Williston, North Dakota 1804, ND",
-                 "Spring Grove Cemetery, Spring Grove Avenue, Cincinnati, OH",
-                 "Chickasaw National Recreation Area, 1008 W 2nd St, Sulphur, OK 73086",
-                 "Columbia River Gorge National Scenic Area, Oregon",
-                 "Liberty Bell, 6th Street, Philadelphia, PA",
-                 "The Breakers, Ochre Point Avenue, Newport, RI",
-                 "Fort Sumter National Monument, Sullivan's Island, SC",
-                 "Mount Rushmore National Memorial, South Dakota 244, Keystone, SD",
-                 "Graceland, Elvis Presley Boulevard, Memphis, TN",
-                 "The Alamo, Alamo Plaza, San Antonio, TX",
-                 "Bryce Canyon National Park, Hwy 63, Bryce, UT",
-                 "Shelburne Farms, Harbor Road, Shelburne, VT",
-                 "Mount Vernon, Fairfax County, Virginia",
-                 "Hanford Site, Benton County, WA",
-                 "Lost World Caverns, Lewisburg, WV",
-                 "Taliesin, County Road C, Spring Green, Wisconsin",
-                 "Yellowstone National Park, WY 82190"]
+# Cut down to 70 for API reasons
+all_waypoints = all_waypoints[0:70]
+
+# Make a copy for later
+all_waypoints_orig = list(all_waypoints)
 
 def CreateOptimalRouteHtmlFile(optimal_route, distance, display=1):
     optimal_route = list(optimal_route)
@@ -103,10 +151,10 @@ def CreateOptimalRouteHtmlFile(optimal_route, distance, display=1):
 
         for waypoint in waypoint_subset[1:-1]:
             output += "\"%s\", " % (waypoint)
-        
+
         if len(waypoint_subset[1:-1]) > 0:
             output = output[:-2]
-        
+
         output += "]);"
         StatementCalcRoutes = StatementCalcRoutes + ' ' + output
         #print(output)
@@ -114,7 +162,7 @@ def CreateOptimalRouteHtmlFile(optimal_route, distance, display=1):
         subset += 9
 
 
-    #write the output to file    
+    #write the output to file
     localoutput_file = output_file.replace('.html', '_' + str(distance) + '.html')
     fs = open(localoutput_file, 'w')
     fs.write(Page_1)
@@ -126,7 +174,7 @@ def CreateOptimalRouteHtmlFile(optimal_route, distance, display=1):
     fs.write(StatementCalcRoutes)
     fs.write(Page_5)
     fs.close()
-    
+
     #Show the result
     if display ==1:
         webbrowser.open_new_tab(localoutput_file)
@@ -135,25 +183,25 @@ def CreateOptimalRouteHtmlFile(optimal_route, distance, display=1):
 def compute_fitness(solution):
     """
         This function returns the total distance traveled on the current road trip.
-        
+
         The genetic algorithm will favor road trips that have shorter
         total distances traveled.
     """
-    
+
     solution_fitness = 0.0
-    
+
     for index in range(len(solution)):
         waypoint1 = solution[index - 1]
         waypoint2 = solution[index]
         solution_fitness += waypoint_distances[frozenset([waypoint1, waypoint2])]
-        
+
     return solution_fitness
 
 def generate_random_agent():
     """
         Creates a random road trip from the waypoints.
     """
-    
+
     new_random_agent = list(all_waypoints)
     random.shuffle(new_random_agent)
     return tuple(new_random_agent)
@@ -161,13 +209,13 @@ def generate_random_agent():
 def mutate_agent(agent_genome, max_mutations=3):
     """
         Applies 1 - `max_mutations` point mutations to the given road trip.
-        
+
         A point mutation swaps the order of two waypoints in the road trip.
     """
-    
+
     agent_genome = list(agent_genome)
     num_mutations = random.randint(1, max_mutations)
-    
+
     for mutation in range(num_mutations):
         swap_index1 = random.randint(0, len(agent_genome) - 1)
         swap_index2 = swap_index1
@@ -176,52 +224,52 @@ def mutate_agent(agent_genome, max_mutations=3):
             swap_index2 = random.randint(0, len(agent_genome) - 1)
 
         agent_genome[swap_index1], agent_genome[swap_index2] = agent_genome[swap_index2], agent_genome[swap_index1]
-            
+
     return tuple(agent_genome)
 
 def shuffle_mutation(agent_genome):
     """
         Applies a single shuffle mutation to the given road trip.
-        
+
         A shuffle mutation takes a random sub-section of the road trip
         and moves it to another location in the road trip.
     """
-    
+
     agent_genome = list(agent_genome)
-    
+
     start_index = random.randint(0, len(agent_genome) - 1)
     length = random.randint(2, 20)
-    
+
     genome_subset = agent_genome[start_index:start_index + length]
     agent_genome = agent_genome[:start_index] + agent_genome[start_index + length:]
-    
+
     insert_index = random.randint(0, len(agent_genome) + len(genome_subset) - 1)
     agent_genome = agent_genome[:insert_index] + genome_subset + agent_genome[insert_index:]
-    
+
     return tuple(agent_genome)
 
 def generate_random_population(pop_size):
     """
         Generates a list with `pop_size` number of random road trips.
     """
-    
+
     random_population = []
     for agent in range(pop_size):
         random_population.append(generate_random_agent())
     return random_population
-    
+
 def run_genetic_algorithm(generations=5000, population_size=100):
     """
         The core of the Genetic Algorithm.
     """
     current_best_distance =-1
-    
+
     # Create a random population of `population_size` number of solutions.
     population = generate_random_population(population_size)
 
     # For `generations` number of repetitions...
     for generation in range(generations):
-        
+
         # Compute the fitness of the entire current population
         population_fitness = {}
 
@@ -239,14 +287,14 @@ def run_genetic_algorithm(generations=5000, population_size=100):
                 print("Generation %d best: %d | Unique genomes: %d" % (generation,
                                                                        population_fitness[agent_genome],
                                                                        len(population_fitness)))
-                print(agent_genome)                
+                print(agent_genome)
                 print("")
 
                 #if this is the first route found, or it is shorter than the best route we know, create a html output and display it
                 if population_fitness[agent_genome] < current_best_distance or current_best_distance < 0:
                     current_best_distance = population_fitness[agent_genome]
                     CreateOptimalRouteHtmlFile(agent_genome,current_best_distance, 1)
-                    
+
 
             # Create 1 exact copy of each of the top 10 road trips
             new_population.append(agent_genome)
@@ -254,12 +302,12 @@ def run_genetic_algorithm(generations=5000, population_size=100):
             # Create 2 offspring with 1-3 point mutations
             for offspring in range(2):
                 new_population.append(mutate_agent(agent_genome, 3))
-                
+
             # Create 7 offspring with a single shuffle mutation
             for offspring in range(7):
                 new_population.append(shuffle_mutation(agent_genome))
 
-        # Replace the old population with the new population of offspring 
+        # Replace the old population with the new population of offspring
         for i in range(len(population))[::-1]:
             del population[i]
 
@@ -267,72 +315,93 @@ def run_genetic_algorithm(generations=5000, population_size=100):
     return current_best_genome
 
 
+pointsToUse = [3,5,10,20,30,40,50][::-1]
+distances_m = []
+for pTU in pointsToUse:
+    all_waypoints_orig =all_waypoints_orig [0:pTU]
 
-# if this file exists, read the data stored in it - if not then collect data by asking google
-print "Begin finding shortest route"
-file_path = waypoints_file
-if os.path.exists(file_path):
-    print "Waypoints exist"
-    #file exists used saved results
-    waypoint_distances = {}
-    waypoint_durations = {}
-    all_waypoints = set()
+    # if this file exists, read the data stored in it - if not then collect data by asking google
+    print "Begin finding shortest route"
+    file_path = waypoints_file
+    if os.path.exists(file_path):
+        print "Waypoints exist"
+        #file exists used saved results
+        waypoint_distances = {}
+        waypoint_durations = {}
+        all_waypoints = set()
 
-    waypoint_data = pd.read_csv(file_path, sep="\t")
+        waypoint_data = pd.read_csv(file_path, sep="\t")
 
-    for i, row in waypoint_data.iterrows():
-        waypoint_distances[frozenset([row.waypoint1, row.waypoint2])] = row.distance_m
-        waypoint_durations[frozenset([row.waypoint1, row.waypoint2])] = row.duration_s
-        all_waypoints.update([row.waypoint1, row.waypoint2])
+        for i, row in waypoint_data.iterrows():
+            if (row.waypoint1 in all_waypoints_orig) & (row.waypoint2 in all_waypoints_orig):
+                waypoint_distances[frozenset([row.waypoint1, row.waypoint2])] = row.distance_m
+                waypoint_durations[frozenset([row.waypoint1, row.waypoint2])] = row.duration_s
+                all_waypoints.update([row.waypoint1, row.waypoint2])
 
-else:
-    #file does not exist - compute results       
-    print "Collecting Waypoints"
-    waypoint_distances = {}
-    waypoint_durations = {}
-
-
-    gmaps = googlemaps.Client(GOOGLE_MAPS_API_KEY)
-    for (waypoint1, waypoint2) in combinations(all_waypoints, 2):
-        try:
-            route = gmaps.distance_matrix(origins=[waypoint1],
-                                          destinations=[waypoint2],
-                                          mode="driving",
-                                          language="English",
-                                          units="metric")
-
-            # "distance" is in meters
-            distance = route["rows"][0]["elements"][0]["distance"]["value"]
-
-            # "duration" is in seconds
-            duration = route["rows"][0]["elements"][0]["duration"]["value"]
-
-            waypoint_distances[frozenset([waypoint1, waypoint2])] = distance
-            waypoint_durations[frozenset([waypoint1, waypoint2])] = duration
-    
-        except Exception as e:
-            print("Error with finding the route between %s and %s." % (waypoint1, waypoint2))
-    
-    print "Saving Waypoints"
-    with open(waypoints_file, "wb") as out_file:
-        out_file.write("\t".join(["waypoint1",
-                                  "waypoint2",
-                                  "distance_m",
-                                  "duration_s"]))
-    
-        for (waypoint1, waypoint2) in waypoint_distances.keys():
-            out_file.write("\n" +
-                           "\t".join([waypoint1,
-                                      waypoint2,
-                                      str(waypoint_distances[frozenset([waypoint1, waypoint2])]),
-                                      str(waypoint_durations[frozenset([waypoint1, waypoint2])])]))
+    else:
+        #file does not exist - compute results
+        print "Collecting Waypoints"
+        waypoint_distances = {}
+        waypoint_durations = {}
 
 
-#optimal_route = run_genetic_algorithm(generations=100, population_size=100)
-print "Search for optimal route"
-optimal_route = run_genetic_algorithm(generations=thisRunGenerations, population_size=thisRunPopulation_size)
+        gmaps = googlemaps.Client(GOOGLE_MAPS_API_KEY)
+        for (waypoint1, waypoint2) in combinations(all_waypoints, 2):
+            try:
+                route = gmaps.distance_matrix(origins=[waypoint1],
+                                              destinations=[waypoint2],
+                                              mode="driving",
+                                              language="English",
+                                              units="metric")
 
-#this is probably redundant now that the files are created in run_genetic_algorithm but leaving it active to ensure 
-#the final result is not lost
-CreateOptimalRouteHtmlFile(optimal_route, 1)
+                # "distance" is in meters
+                distance = route["rows"][0]["elements"][0]["distance"]["value"]
 
+                # "duration" is in seconds
+                duration = route["rows"][0]["elements"][0]["duration"]["value"]
+
+                waypoint_distances[frozenset([waypoint1, waypoint2])] = distance
+                waypoint_durations[frozenset([waypoint1, waypoint2])] = duration
+
+            except Exception as e:
+                print("Error with finding the route between %s and %s." % (waypoint1, waypoint2))
+
+        print "Saving Waypoints"
+        with open(waypoints_file, "wb") as out_file:
+            out_file.write("\t".join(["waypoint1",
+                                      "waypoint2",
+                                      "distance_m",
+                                      "duration_s"]))
+
+            for (waypoint1, waypoint2) in waypoint_distances.keys():
+                out_file.write("\n" +
+                               "\t".join([waypoint1,
+                                          waypoint2,
+                                          str(waypoint_distances[frozenset([waypoint1, waypoint2])]),
+                                          str(waypoint_durations[frozenset([waypoint1, waypoint2])])]))
+
+
+
+    #optimal_route = run_genetic_algorithm(generations=100, population_size=100)
+    print "Search for optimal route"
+    optimal_route = run_genetic_algorithm(generations=thisRunGenerations, population_size=thisRunPopulation_size)
+
+    #this is probably redundant now that the files are created in run_genetic_algorithm but leaving it active to ensure
+    #the final result is not lost
+
+    distances_m.append(compute_fitness(optimal_route))
+    CreateOptimalRouteHtmlFile(optimal_route, pTU)
+
+m2mi = 0.000621371
+print 'Ncities, total miles'
+for ncit,dist in zip(pointsToUse, distances_m):
+    print '%i,    %i' % (ncit,dist*m2mi)
+
+#Ncities, total miles
+#50,    12444
+#40,    11555
+#30,    10877
+#20,    9659
+#10,    7850
+#5,    6187
+#3,    5581
